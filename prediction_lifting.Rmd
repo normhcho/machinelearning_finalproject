@@ -1,0 +1,125 @@
+**Predicting the Weightlifting Activity**
+==============================================
+
+Norm Cho
+
+May 23, 2018
+
+**Background**
+
+The objective is to capture how well people are performing certain physical activities.  In this example, data was gathered from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.  The goal is to create a model that can accurately predict how the unilateral dumbbell bicep curl was executed among 6 males aged 20 to 28 who are inexperienced in weightlifting.  See below for the class definitions:
+
+* Class A: exactly according to the specification
+* Class B: throwing the elbows to the front
+* Class C: lifting the dumbbell only halfway 
+* Class D: lowering the dumbbell only halfway
+* Class E: throwing the hips to the front
+
+**Cross-Validation**
+
+Even though there are training and test sets, the 20 record "testing" set seems to be more of a validation set.  The "training" data will be split into 70% training and 30% testing.  
+
+**Model Selection**
+
+There are many model types to choose.  Because there is final test set of 20 records, the premium will be placed on accuracy.   Thus, the plan is start with a random forest model, but if the model is not accurate enough, I would consider other methods such as decision tree and boosting, or even blending multiple models types together if necessary.
+
+**Variables**
+
+It is important is form a strategy before writing a single line of code.  
+
+With 158 potential variables, there seems to be a high likelihood that the accuracy would be very high if the model without any adjustments. However, there could be an overfitting problem and it could take a very long time to run.
+
+```{r getting_cleaning, results='hide'}
+library(caret)
+dat <- read.csv("pml-training.csv")
+dat_test <- read.csv("pml-testing.csv")
+inTrain <- createDataPartition(y=dat$classe, p=0.7, list=FALSE)
+training <- dat[inTrain,]
+testing <- dat[-inTrain,]
+summary(training)
+str(training)
+dim(training)
+dim(testing)
+set.seed(410)  #homage to the Baltimore area code
+```
+
+The point is to preview the data.  Given the limitations regarding the number of figures that can be shown, the results are hidden.  There are are 13,737 records in the training data and 5,885 in the testing data.
+
+**Random Forest, Version #1**
+
+Therefore, for the first iteration of the model, I looked at the 20 record pml-testing file and looked at which columns had data.  For the columns without data, they were culled.  As a result, the number of columns was reduced to ~55 variables.
+
+```{r model_rf_1, cache=TRUE}
+modFit_rf <- train(classe ~ (user_name+num_window+roll_belt+pitch_belt+yaw_belt+total_accel_belt+gyros_belt_x+gyros_belt_y+gyros_belt_z+accel_belt_x+accel_belt_y+accel_belt_z+magnet_belt_x+magnet_belt_y+magnet_belt_z+roll_arm+pitch_arm+yaw_arm+total_accel_arm+gyros_arm_x+gyros_arm_y+gyros_arm_z+accel_arm_x +accel_arm_y+accel_arm_z+magnet_arm_x+magnet_arm_y+magnet_arm_z+roll_dumbbell +pitch_dumbbell+yaw_dumbbell+total_accel_dumbbell+gyros_dumbbell_x+gyros_dumbbell_y+gyros_dumbbell_z+accel_dumbbell_x+accel_dumbbell_y+accel_dumbbell_z+magnet_dumbbell_x+magnet_dumbbell_y+magnet_dumbbell_z+roll_forearm+pitch_forearm+yaw_forearm+total_accel_forearm+gyros_forearm_x+gyros_forearm_y+gyros_forearm_z+accel_forearm_x+accel_forearm_y+accel_forearm_z+magnet_forearm_x+magnet_forearm_y+magnet_forearm_z),method="rf", data=training)
+
+predict_rf <- predict(modFit_rf,testing)
+confusionMatrix(predict_rf,testing$classe)
+```
+This was run with 55 variables, and the accuracy rate at 99.8% was more than enough but given that it can take a long time to run, I wanted to see if the number of variables can be reduced to something more manageable.    I kept the user name because I wasn't sure whether different measurement apply to separate people in the different ways.
+
+
+**Random Forest, Version #2**
+
+This version is reduced to 17 variables, removing the user name, and anything measuring in the x, y, or z direction.  For examples, variables such as gyros_arm_x and accel_forearm_z were removed.  While it would take less time to run, how would it impact the accuracy rate?  
+
+```{r model_rf_2,cache=TRUE}
+modfit_rf2 <- train(classe ~ (num_window+roll_belt+pitch_belt+yaw_belt+total_accel_belt+roll_arm+pitch_arm+yaw_arm+total_accel_arm+roll_dumbbell+pitch_dumbbell+yaw_dumbbell+total_accel_dumbbell+roll_forearm+pitch_forearm+yaw_forearm+total_accel_forearm),method="rf", data=training)
+
+predict_rf2 <- predict(modfit_rf2,testing)
+confusionMatrix(predict_rf2,testing$classe)
+```
+
+It turned out that it took much less time to run and the accuracy rate actually improved to 99.95%.  The plan is to fine tune the model with fewer variables, but otherwise I am comfortable using this vs. the 20 observation quiz.  The only possible is that the total variables (eg total arm) consists of arm metrics, meaning there are also related.
+
+**Random Forest, Version #3**
+
+As stated before, because the total acceleration columns are likely a function of their respective inputs, this version will exclude those variables. 
+
+```{r model_rf_3, cache=TRUE}
+modfit_rf3 <- train(classe ~ (num_window+roll_belt+pitch_belt+yaw_belt+roll_arm+pitch_arm+yaw_arm+roll_dumbbell+pitch_dumbbell+yaw_dumbbell+roll_forearm+pitch_forearm+yaw_forearm),method="rf", data=training)
+
+predict_rf3 <- predict(modfit_rf3,testing)
+confusionMatrix(predict_rf3,testing$classe)
+```
+
+The accuracy rate improved to 99.96% with the 13 variable model.  While there is some worry with overfitting, but hopefully that is mitigated with the relatively low number of variables.  This is the model I plan to use.
+
+**Error Analysis**
+
+With such a high accuracy rate at 99.96%, other measure error metrics such as sensitivity and specificity, positive predictive value and even kappa (concordance) are above 99.5%.
+
+**Decision Tree**
+
+```{r model_dt,  cache=TRUE}
+modFit_dt <- train(classe ~ (user_name+num_window+roll_belt+pitch_belt+yaw_belt+total_accel_belt+gyros_belt_x+gyros_belt_y+gyros_belt_z+accel_belt_x+accel_belt_y+accel_belt_z+magnet_belt_x+magnet_belt_y+magnet_belt_z+roll_arm+pitch_arm+yaw_arm+total_accel_arm+gyros_arm_x+gyros_arm_y+gyros_arm_z+accel_arm_x +accel_arm_y+accel_arm_z+magnet_arm_x+magnet_arm_y+magnet_arm_z+roll_dumbbell +pitch_dumbbell+yaw_dumbbell+total_accel_dumbbell+gyros_dumbbell_x+gyros_dumbbell_y+gyros_dumbbell_z+accel_dumbbell_x+accel_dumbbell_y+accel_dumbbell_z+magnet_dumbbell_x+magnet_dumbbell_y+magnet_dumbbell_z+roll_forearm+pitch_forearm+yaw_forearm+total_accel_forearm+gyros_forearm_x+gyros_forearm_y+gyros_forearm_z+accel_forearm_x+accel_forearm_y+accel_forearm_z+magnet_forearm_x+magnet_forearm_y+magnet_forearm_z),method="rpart",data=training)
+
+print(modFit_dt$finalModel)
+predict_dt <- predict(modFit_dt,testing)
+confusionMatrix(predict_dt, testing$classe)
+```
+
+With the accuracy rate around 50%, it is clear that at least this version of the decision tree model should not implemented.
+
+**Boosting**
+
+Aside from using the random forest and decision, I was again curious if boosting is a feasible model using the 13 variables from Random Forest Model #3.
+```{r model_boo, results="hide", cache=TRUE}
+modfit_gbm <- train(classe ~ (num_window+roll_belt+pitch_belt+yaw_belt+roll_arm+pitch_arm+yaw_arm+roll_dumbbell+pitch_dumbbell+yaw_dumbbell+roll_forearm+pitch_forearm+yaw_forearm),method="gbm", data=training)
+```
+```{r model_boo2}
+predict_gbm <- predict(modfit_gbm,testing)
+confusionMatrix(predict_gbm, testing$classe)
+```
+Although I still plan on using the random forest, the boosting model is viable with its high accuracy rate at 99.2%
+
+
+**Prediction**
+
+Predicting the results of the final test using both the Random Forest #3 and boosting models.
+```{r predict}
+predict(modfit_rf3,dat_test)
+predict(modfit_gbm,dat_test)
+```
+
+Both models show the same results, which gives me more confidence that the models will yield the correct answers.
+
